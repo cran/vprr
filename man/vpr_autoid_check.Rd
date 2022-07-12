@@ -4,12 +4,14 @@
 \alias{vpr_autoid_check}
 \title{Checks manually created aid files for errors}
 \usage{
-vpr_autoid_check(basepath, cruise)
+vpr_autoid_check(basepath, cruise, del)
 }
 \arguments{
 \item{basepath}{basepath to autoid folder eg. C:/data/CRUISENAME/autoid/}
 
 \item{cruise}{name of cruise which is being checked}
+
+\item{del}{Logical value, if \code{TRUE}, empty files will be deleted (see warning), if \code{FALSE}, files WILL NOT be deleted (they will be listed in output)}
 }
 \value{
 text file (saved in working directory) named CRUISENAME_aid_file_check.txt
@@ -18,6 +20,9 @@ text file (saved in working directory) named CRUISENAME_aid_file_check.txt
 Removes any empty aid files after manual reclassification, checks for tow
 numbers and other metadata to match. Performs check to ensure measurement and
 ROI files are the same length
+}
+\details{
+WARNING: This function will delete empty aid and aidmeas files, permanently changing your directory. Consider making a back up copy before running this function.
 }
 \author{
 E Chisholm

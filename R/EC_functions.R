@@ -13,8 +13,42 @@
 #' @rawNamespace import(metR, except = coriolis)
 #'
 NULL
+
+
+options(dplyr.summarise.inform = FALSE) # TODO: is this needed?
+
 #### PROCESSING FUNCTIONS ####
 
+
+#' Read prediction output from a CNN model
+#'
+#' @param filename model prediction output file (.txt) from `vpr_transferlearn::save_output()`
+#'
+#' @return a dataframe
+#' @export
+#'
+#'
+vpr_pred_read <- function(filename){
+  # do some checks on the file
+  # check for .txt file
+  # check that data index exists
+
+  all_lines <- readLines(filename)
+  dat_index <- grep(all_lines, pattern = 'DATA ----')
+  dat_tb <- read.table(filename, header = TRUE, sep = ',', skip = dat_index)
+
+  dat <- list()
+  dat$metadata <- as.list(all_lines[seq_len(dat_index -1)])
+  dat$data <- dat_tb
+
+  md_names <- stringr::str_split_fixed(dat$metadata, pattern = ':', 2)[,1]
+  md_values <- stringr::str_split_fixed(dat$metadata, pattern = ':', 2)[,2]
+
+  dat$metadata <- md_values
+  names(dat$metadata) <- md_names
+
+  return(dat)
+}
 
 #' Save VPR data as an \link[oce]{as.oce} object
 #'
@@ -62,7 +96,7 @@ vpr_save <- function(data, metadata){
 
   # check for metadata in dataframe
   rem_list <- list()
-  for(i in 1:length(oce_data@data)){
+  for(i in seq_len(length(oce_data@data))){
     if(length(unique(oce_data@data[[i]])) == 1){
       print(paste('Metadata parameter found in Data object! ', names(oce_data@data)[[i]], 'value of' , unique(oce_data@data[[i]]), 'moved to metadata slot. '))
       # add as metadtaa parameter
@@ -106,7 +140,7 @@ if(missing(metadata)){
 #' Add Year/ month/ day hour:minute:second information
 #'
 #' Calculate and record calendar dates for vpr data from day-of-year, hour, and time (in milliseconds) info.
-#' Will also add 'avg_hr' parameter if not already present.
+#' Will also add 'time_hr' parameter if not already present.
 #'
 #' @param data VPR data frame from \code{\link{vpr_ctdroi_merge}}
 #' @param year Year of data collection
@@ -126,10 +160,10 @@ vpr_ctd_ymd <- function(data, year, offset){
   # avoid CRAN notes
   . <- time_ms <- NA
 
-  d <- grep(names(data), pattern = 'avg_hr')
+  d <- grep(names(data), pattern = 'time_hr')
   if(length(d) == 0){
     data <- data %>%
-      dplyr::mutate(., avg_hr = time_ms / 3.6e+06)
+      dplyr::mutate(., time_hr = time_ms / 3.6e+06)
   }
 
 
@@ -236,7 +270,7 @@ vpr_size_bin <- function(data_all, bin_mea){
 #' data("roimeas_dat_combine")
 #' category_of_interest = 'Calanus'
 #'
-#'ctd_roi_merge$avg_hr <- ctd_roi_merge$time_ms /3.6e+06
+#'ctd_roi_merge$time_hr <- ctd_roi_merge$time_ms /3.6e+06
 #'
 #' size_df_f <- vpr_ctdroisize_merge(ctd_roi_merge, data_mea = roimeas_dat_combine,
 #'  taxa_of_interest = category_of_interest)
@@ -306,7 +340,12 @@ vpr_autoid_copy <- function(basepath, day, hour, classifier_type, classifier_nam
   }
 
   day_hour <- paste0('d', day, '.h', hour)
-  type_day_hour <- paste0(classifier_type,'aid.', day_hour)
+  if(!missing(classifier_type)){
+    type_day_hour <- paste0(classifier_type,'aid.', day_hour)
+  } else{
+    warning('No classifier information provided, attempting to pull ROIs based only on day/hour, please check there is only one aid file for each category!')
+    type_day_hour <- day_hour
+  }
 
 for (i in folder_names) {
 
@@ -319,12 +358,15 @@ for (i in folder_names) {
   subtxt <- grep(txt_roi, pattern = type_day_hour, value = TRUE)
   txt_roi <- subtxt
 
-  subtxt2 <- grep(txt_roi, pattern = classifier_name, value = TRUE)
-  txt_roi <- subtxt2
+  if(!missing(classifier_name)){
+    subtxt2 <- grep(txt_roi, pattern = classifier_name, value = TRUE)
+    txt_roi <- subtxt2
+  }
 
   for(ii in txt_roi) {
 
-    setwd(dir_roi)
+    # setwd(dir_roi)
+    withr::with_dir(dir_roi, code = {
 
     roi_path_str <- read.table(ii, stringsAsFactors = FALSE)
 
@@ -334,7 +376,7 @@ for (i in folder_names) {
     shell(command1)
 
     #Copy rois to this directory
-    for (iii in 1:nrow(roi_path_str)) {
+    for (iii in seq_len(nrow(roi_path_str))) {
 
       dir_tmp <- as.character(roi_path_str[iii,1])
       command2 <- paste("copy", dir_tmp, roi_folder, sep = " ")
@@ -343,6 +385,7 @@ for (i in folder_names) {
       print(paste(iii, '/', nrow(roi_path_str),' completed!'))
     }
 
+    })
   }
 
   print(paste(i, 'completed!'))
@@ -365,7 +408,7 @@ print(paste('Day ', day, ', Hour ', hour, 'completed!'))
 #' @examples
 #'
 #' data('ctd_roi_merge')
-#' ctd_roi_merge$avg_hr <- ctd_roi_merge$time_ms /3.6e+06
+#' ctd_roi_merge$time_hr <- ctd_roi_merge$time_ms /3.6e+06
 #'
 #' taxas_list <- c('Calanus', 'krill')
 #' binSize <- 5
@@ -390,7 +433,7 @@ vpr_roi_concentration <- function(data, taxas_list, station_of_interest, binSize
 
   # calculate concentrations
   conc_dat <- list()
-  for ( ii in 1:length(valid_taxa)){
+  for ( ii in seq_len(length(valid_taxa))){
     conc_dat[[ii]] <- concentration_category(data, valid_taxa[ii], binSize, imageVolume) %>%
       dplyr::mutate(., taxa = valid_taxa[ii])
   }
@@ -447,7 +490,7 @@ concentration_category <- function(data, taxa, binSize, imageVolume, rev = FALSE
       'day',
       'hour',
       'station',
-      'avg_hr',
+      'time_hr',
       'roi',
       'depth'
     )
@@ -494,7 +537,7 @@ concentration_category <- function(data, taxa, binSize, imageVolume, rev = FALSE
 #'
 bin_cast <- function(ctd_roi_oce, imageVolume, binSize, rev = FALSE){
 
-. <- avg_hr <- conc_m3 <- NA
+. <- time_hr <- conc_m3 <- NA
   #find upcasts
   upcast <- ctd_cast(data = ctd_roi_oce, cast_direction = 'ascending', data_type = 'df')
   upcast2 <- lapply(X = upcast, FUN = bin_calculate, binSize = binSize, imageVolume = imageVolume, rev = rev)
@@ -511,7 +554,7 @@ bin_cast <- function(ctd_roi_oce, imageVolume, binSize, rev = FALSE){
 
   #Remove infinite concentrations (why do these occur again?)
   vpr_depth_bin <- vpr_depth_bin %>%
-    dplyr::mutate(., avg_hr = avg_hr - min(avg_hr)) %>%
+   # dplyr::mutate(., time_hr = time_hr - min(time_hr)) %>% # this is potentially creating issues where time is not aligned in plots
     dplyr::filter(., is.finite(conc_m3))
 
   return(vpr_depth_bin)
@@ -536,7 +579,7 @@ vpr_oce_create <- function(data){
 
   # create oce objects
   ctd_roi_oce <- oce::as.ctd(data)
-  otherVars<-  c('time_ms', 'fluorescence_mv', 'turbidity_mv', 'n_roi', 'sigmaT', 'depth', 'avg_hr') # TODO edit to avoid hard coding variable names
+  otherVars<-  c('time_ms', 'fluorescence_mv', 'turbidity_mv', 'n_roi', 'sigmaT', 'depth', 'time_hr') # TODO edit to avoid hard coding variable names
   for ( o in otherVars){
     eval(parse(text = paste0("ctd_roi_oce <- oce::oceSetData(ctd_roi_oce, name = '",o,"', value = data$",o,")")))
   }
@@ -586,7 +629,7 @@ if(length(ctd_files) == 0){
   stop('No CTD files provided!')
 }
   ctd_dat <- list()
-  for (i in 1:length(ctd_files)){
+  for (i in seq_len(length(ctd_files))){
 
     if(missing(day)){
     day_id <- unlist(vpr_day(ctd_files[i]))
@@ -695,7 +738,7 @@ vpr_ctdroi_merge <- function(ctd_dat_combine, roi_dat_combine){
 #'
 #'Read aid text files containing ROI string information or measurement data and output as a dataframe
 #'
-#'Only outputs either ROI string information OR measurement data but both file types must be provided
+#'Only outputs either ROI string information OR measurement data
 #'
 #'
 #' @author E. Chisholm & K. Sorochan
@@ -765,6 +808,8 @@ vpr_ctdroi_merge <- function(ctd_dat_combine, roi_dat_combine){
 #' @export
 vpr_autoid_read <- function(file_list_aid, file_list_aidmeas, export, station_of_interest, opticalSetting, warn = TRUE){
 
+  # set-up for only processing aid data
+  if(missing(file_list_aidmeas)){export <- 'aid'}
   # avoid CRAN notes
   . <- roi <- taxa <- n_roi <- day_hour <- Perimeter <- Area <- width1 <- width2 <- width3 <- short_axis_length <- long_axis_length <- NA
 if( export == 'aidmeas'){
@@ -777,9 +822,9 @@ if( export == 'aidmeas'){
 }
 # aid
 
-  col_names <- c("roi")
+  col_names <- "roi"
   dat <- list()
-  for(i in 1:length(file_list_aid)) {
+  for(i in seq_len(length(file_list_aid))) {
 
     data_tmp <- read.table(file = file_list_aid[i], stringsAsFactors = FALSE, col.names = col_names)
 
@@ -788,9 +833,12 @@ if( export == 'aidmeas'){
 
 
 
-    data_tmp$taxa <- unlist(vpr_category(file_list_aid[i]))
+    data_tmp$taxa <- unlist(unique(vpr_category(file_list_aid[i])[[1]]))
     day <- unlist(vpr_day(file_list_aid[i]))
     hour <- unlist(vpr_hour(file_list_aid[i]))
+    if(length(day) >1 | length(hour) >1){
+      stop('Problem detecting day/hour values!')
+    }
     data_tmp$day_hour <- paste(day, hour, sep = ".")
     dat[[i]]<- data_tmp
 
@@ -802,12 +850,29 @@ if( export == 'aidmeas'){
   #browser()
   remove(dat, data_tmp, day, hour)
 
+  # format
+  dat_combine_aid$id <- row.names(dat_combine_aid)
+
+
+  # Get tabulated rois per time by taxa
+  roi_df <- dat_combine_aid %>%
+    dplyr::mutate(., roi = substr(roi, 1, 8)) %>%
+    dplyr::group_by(., taxa, roi) %>%
+    dplyr::summarise(., n_roi = dplyr::n(), .groups = NULL) %>%
+    tidyr::spread(., taxa, n_roi) %>%
+    dplyr::mutate(., time_ms = as.numeric(roi))
+
+  roi_dat <- data.frame(roi_df)
+  roi_dat[is.na(roi_dat)] <- 0
+
+
+
 # aidmeas
-
-
+# TODO: update code so it can run without measurement input
+if(export == 'aidmeas'){
   dat <- list()
   col_names <- c('Perimeter','Area','width1','width2','width3','short_axis_length','long_axis_length')
-  for(i in 1:length(file_list_aidmeas)) {
+  for(i in seq_len(length(file_list_aidmeas))) {
 
     data_tmp <- read.table(file_list_aidmeas[i], stringsAsFactors = FALSE, col.names = col_names)
 
@@ -830,36 +895,21 @@ if(!is.na(opticalSetting)){
   dat_combine_aidmeas <- do.call(rbind, dat)
 
   # remove(dat, data_tmp, day, hour)
-
-
-# format
-  dat_combine_aid$id <- row.names(dat_combine_aid)
   dat_combine_aidmeas$id <- row.names(dat_combine_aidmeas)
 
+  # Get roi measurement data frame
+  dat_combine_selected <- dat_combine_aidmeas %>%
+    dplyr::select(., taxa, day_hour, id, Perimeter, Area, width1, width2, width3, short_axis_length, long_axis_length) #added all measurement columns EC Jan 28 2020
 
-    # Get tabulated rois per time by taxa
-    roi_df <- dat_combine_aid %>%
-      dplyr::mutate(., roi = substr(roi, 1, 8)) %>%
-      dplyr::group_by(., taxa, roi) %>%
-      dplyr::summarise(., n_roi = n()) %>%
-      tidyr::spread(., taxa, n_roi) %>%
-      dplyr::mutate(., time_ms = as.numeric(roi))
+  roimeas_dat_combine <- right_join(dat_combine_aid, dat_combine_selected, by = c('taxa', 'day_hour', 'id') ) %>%
+    dplyr::select(., - id) %>%
+    dplyr::mutate(., station = station_of_interest) %>%
+    dplyr::mutate(., long_axis_length = as.numeric(long_axis_length)) %>%
+    dplyr::mutate(., time_ms = as.numeric(substr(roi, 1, 8)))
 
-    roi_dat <- data.frame(roi_df)
-    roi_dat[is.na(roi_dat)] <- 0
-
-
+} # end aidmeas section
 
 
-    # Get roi measurement data frame
-    dat_combine_selected <- dat_combine_aidmeas %>%
-      dplyr::select(., taxa, day_hour, id, Perimeter, Area, width1, width2, width3, short_axis_length, long_axis_length) #added all measurement columns EC Jan 28 2020
-
-    roimeas_dat_combine <- right_join(dat_combine_aid, dat_combine_selected, by = c('taxa', 'day_hour', 'id') ) %>%
-      dplyr::select(., - id) %>%
-      dplyr::mutate(., station = station_of_interest) %>%
-      dplyr::mutate(., long_axis_length = as.numeric(long_axis_length)) %>%
-      dplyr::mutate(., time_ms = as.numeric(substr(roi, 1, 8)))
 
   #  browser()
 # export
@@ -954,7 +1004,7 @@ ctd_df_cols <- function(x, col_list) {
   if(missing(col_list)){
     col_list <- c("time_ms", "conductivity", "temperature", "pressure", "salinity", "fluor_ref", "fluorescence_mv",
       "turbidity_ref", "turbidity_mv", "altitude_NA")
-    warning('CTD data columns named based on 2019 defaults!')
+    warning('CTD data columns named based on defaults!')
   }
 
 
@@ -963,7 +1013,7 @@ ctd_df_cols <- function(x, col_list) {
   time <- as.numeric(gsub("[^[:digit:]]", "", time))
 
 
-  data2 <- cbind(time, data[,-c(1)])
+  data2 <- cbind(time, data[,-1])
   colnames(data2) <- col_list
   data2 <- data2[!duplicated(data2), ]
   data2
@@ -986,8 +1036,8 @@ normalize_matrix <- function(mat){
 
 
   nm <- matrix(nrow = dim(mat)[1], ncol = dim(mat)[2])
-  for(i in 1:length(nm[,1])){
-    for (j in 1:length(nm[1,])){
+  for(i in seq_len(length(nm[,1]))){ # 1:length(nm[,1])
+    for (j in seq_len(length(nm[1,]))){ # 1:length(nm[1,])
       nm[i,j] <- mat[i,j]/colSums(mat)[j]
     }
   }
@@ -1102,8 +1152,8 @@ bin_calculate <- function(data, binSize = 1, imageVolume, rev = FALSE){
 
   # Get variables of interest using oce bin functions
 
-  min_time_s <- oce::binApply1D(p, data$time/1000, xbreaks = x_breaks, min)$result
-  max_time_s <- oce::binApply1D(p, data$time/1000, xbreaks = x_breaks, max)$result
+  min_time_s <- oce::binApply1D(p, data$time_ms/1000, xbreaks = x_breaks, min)$result
+  max_time_s <- oce::binApply1D(p, data$time_ms/1000, xbreaks = x_breaks, max)$result
   min_depth <- oce::binApply1D(p, data$depth, xbreaks = x_breaks, min)$result
   max_depth <- oce::binApply1D(p, data$depth, xbreaks = x_breaks, max)$result
   n_roi_bin <- oce::binApply1D(p, data$n_roi, xbreaks = x_breaks, sum)$result
@@ -1112,7 +1162,8 @@ bin_calculate <- function(data, binSize = 1, imageVolume, rev = FALSE){
   density <- oce::binApply1D(p, data$sigmaT, xbreaks = x_breaks, mean)$result
   fluorescence <- oce::binApply1D(p, data$fluorescence_mv, xbreaks = x_breaks, mean)$result
   turbidity <- oce::binApply1D(p, data$turbidity_mv, xbreaks = x_breaks, mean)$result
-  avg_hr <- oce::binApply1D(p, data$time/(1000*3600), xbreaks = x_breaks, mean)$result
+  time_ms <- oce::binApply1D(p, data$time_ms, xbreaks = x_breaks, mean)$result
+  time_hr <- oce::binApply1D(p, data$time_ms/(1000*3600), xbreaks = x_breaks, mean)$result # update time naming scheme May 2022
 if (rev == TRUE){
 
   depth <- rev(oce::binApply1D(p, data$depth, xbreaks = x_breaks, mean)$xmids)
@@ -1131,7 +1182,7 @@ if (rev == TRUE){
   # placeholder bin in that case the result length will be different than the
   # length of midpoints since the variable "pressure" is a mid point calculation it is used to
   # test for non existent empty bins. If there are non existant empty bins,
-  # binMean1D will calculate them as NA, this loop fin where the bins would
+  # binMean1D will calculate them as NA, this loop finds where the bins would
   # have been located and removes those indexes from the pressure vector so the
   # length of variables is all identical
 
@@ -1181,7 +1232,8 @@ if (rev == TRUE){
   # Output
   data.frame(depth, min_depth, max_depth, depth_diff, min_time_s, max_time_s, time_diff_s,
              n_roi_bin, conc_m3,
-             temperature, salinity, density, fluorescence, turbidity, avg_hr, n_frames, vol_sampled_bin_m3,
+             temperature, salinity, density, fluorescence, turbidity,
+             time_hr, n_frames, vol_sampled_bin_m3, time_ms,
              towyo = cast_id, max_cast_depth) # MAX CAST PRESSURE ADDED BY KS
 } # end else loop for size error
 }
@@ -1224,7 +1276,7 @@ ctd_cast <- function(data, cast_direction = 'ascending', data_type, cutoff = 0.1
 
 
   # append data with 'cast_id' to be able to identify/ combine data frames
-  for(i in 1:length(cast)) {
+  for(i in seq_len(length(cast))) {
 
     data <- cast[[i]]
 
@@ -1409,7 +1461,7 @@ vpr_category <- function(x) {
     'cnidarians'
   )
 
-  for(i in 1:length(taxa_ids)) {
+  for(i in seq_len(length(taxa_ids))) {
 
     taxa_id <- taxa_ids[i]
 
@@ -1496,7 +1548,7 @@ vpr_summary <- function(all_dat, fn, tow = tow, day = day, hour = hour){
   #'
   #' @author E Chisholm
   #' @param all_dat data frame containing VPR and CTD data including time_ms,
-  #'   avg_hr, conductivity, temperature, pressure, salinity, fluorescence_mv,
+  #'   time_hr, conductivity, temperature, pressure, salinity, fluorescence_mv,
   #'   turbidity_mv, sigmaT
   #' @param fn file name to save data summary, if not provided, summary will print to console
   #' @param tow VPR tow number
@@ -1507,7 +1559,7 @@ vpr_summary <- function(all_dat, fn, tow = tow, day = day, hour = hour){
   #' @export
 
   #prints a data summary report, part of VP easyPlot
-  if(!missing(fn)){sink(fn)}
+  if(!missing(fn)){sink(fn)} # TODO: update to use withr conventions
 
   cat('                  Data Summary Report \n')
   cat('Report processed:', as.character(Sys.time()), '\n')
@@ -1517,7 +1569,7 @@ vpr_summary <- function(all_dat, fn, tow = tow, day = day, hour = hour){
   cat(' >>>>  Time \n')
   cat('Data points: ', length(all_dat$time_ms),'\n')
   cat('Range: ', min(all_dat$time_ms),' - ', max(all_dat$time_ms), ' (ms) \n')
-  cat('Range: ', min(all_dat$avg_hr),' - ', max(all_dat$avg_hr), ' (hr) \n')
+  cat('Range: ', min(all_dat$time_hr),' - ', max(all_dat$time_hr), ' (hr) \n')
   cat('\n')
   cat('\n')
   cat(' >>>>  Conductivity \n')
@@ -1602,10 +1654,13 @@ insertRow <- function(existingDF, newrow, r) {
 #' numbers and other metadata to match. Performs check to ensure measurement and
 #' ROI files are the same length
 #'
+#' WARNING: This function will delete empty aid and aidmeas files, permanently changing your directory. Consider making a back up copy before running this function.
+#'
 #' @author E Chisholm
 #'
 #' @param basepath basepath to autoid folder eg. C:/data/CRUISENAME/autoid/
 #' @param cruise name of cruise which is being checked
+#' @param del Logical value, if `TRUE`, empty files will be deleted (see warning), if `FALSE`, files WILL NOT be deleted (they will be listed in output)
 #'
 #' @return text file (saved in working directory) named CRUISENAME_aid_file_check.txt
 #'
@@ -1613,16 +1668,18 @@ insertRow <- function(existingDF, newrow, r) {
 #' @export
 #'
 #'
-vpr_autoid_check <- function(basepath, cruise){
+vpr_autoid_check <- function(basepath, cruise, del){
 
+  on.exit(closeAllConnections()) # make sure text file gets closed
 
 
   taxa_folders <- list.files(basepath, full.names = TRUE)
 
-  sink(paste0(cruise,'_aid_file_check.txt'))
+  withr::with_output_sink(paste0(cruise,'_aid_file_check.txt'), code = {
+  # sink(paste0(cruise,'_aid_file_check.txt'))
   # loop through each taxa
 
-  for (i in 1:length(taxa_folders)){
+  for (i in seq_len(length(taxa_folders))){
     path <- taxa_folders[i]
 
     # get all files (aid )
@@ -1631,7 +1688,7 @@ vpr_autoid_check <- function(basepath, cruise){
     #### EMPTY FILE CHECK
     # check for empty files
     empty_ind <- list()
-    for (ii in 1:length(aid_fns)){
+    for (ii in seq_len(length(aid_fns))){
       fn <- readLines(aid_fns[ii])
       if(length(fn) == 0){
         cat('\n')
@@ -1646,6 +1703,7 @@ vpr_autoid_check <- function(basepath, cruise){
     }
     cat('Empty file check complete for', taxa_folders[i], '\n')
 
+    if (del == TRUE){
     # automated deleteion of empty files
 
     empty_aids <- aid_fns[empty_ind == TRUE]
@@ -1660,7 +1718,7 @@ vpr_autoid_check <- function(basepath, cruise){
     empty_files <- c(empty_aids, empty_aidmeas)
 
     if (length(empty_files) != 0){ # only if empty files exist
-      for (ii in 1:length(empty_files)){
+      for (ii in seq_len(length(empty_files))){
 
         check <- readLines(empty_files[ii])
 
@@ -1678,6 +1736,7 @@ vpr_autoid_check <- function(basepath, cruise){
       }
     }
 
+    }
     # remove any empty files from data frame before running next check
 
     aid_fns <- aid_fns[empty_ind == FALSE]
@@ -1688,14 +1747,14 @@ vpr_autoid_check <- function(basepath, cruise){
 
 
       # read each aid file
-      for (ii in 1:length(aid_fns)){
+      for (ii in seq_len(length(aid_fns))){
         fn <- readLines(aid_fns[ii])
         # check vpr tow number
 
         v_loc <- stringr::str_locate(fn, 'vpr')
 
         vpr_num <- list()
-        for (iii in 1:length(v_loc[,1])){
+        for (iii in seq_len(length(v_loc[,1]))){
           fn_str <- fn[iii]
           fn_str_split <- stringr::str_split(fn_str, pattern = '\\\\')
           vpr_num[iii] <- fn_str_split[[1]][5]
@@ -1722,7 +1781,7 @@ vpr_autoid_check <- function(basepath, cruise){
           cat('\n')
           # put strings back together and save file
 
-          for(iii in 1:length(fn)){
+          for(iii in seq_len(length(fn))){
             fn_str <- fn[iii]
             fn_str_split <- stringr::str_split(fn_str, pattern = '\\\\')
             fn_str_split[[1]][5] <- final_vpr
@@ -1753,7 +1812,7 @@ vpr_autoid_check <- function(basepath, cruise){
         cat('Mismatched number of size and roi files! \n')
       }
 
-      for (ii in 1:length(sizefiles)){
+      for (ii in seq_len(length(sizefiles))){
         s_fn <- readLines(sizefiles[[ii]])
         r_fn <- readLines(roifiles[[ii]])
         if (length(s_fn > 0)){
@@ -1784,7 +1843,8 @@ vpr_autoid_check <- function(basepath, cruise){
   }
 
 
-  sink()
+  # sink()
+  }) # end sink output
 
 }
 
@@ -1815,7 +1875,7 @@ getRoiMeasurements <- function(taxafolder, nchar_folder, unit = 'mm', opticalSet
 
   auto_measure_mm_alltaxa_ls <- list()
   # browser()
-  for (i in 1:length(taxafolder)) {
+  for (i in seq_len(length(taxafolder))) {
     # print(paste( 'i = ',i))
     #find files
     sizefiles <- list.files(paste(taxafolder[i],'aidmea',sep='\\'), full.names = TRUE)
@@ -1852,7 +1912,7 @@ getRoiMeasurements <- function(taxafolder, nchar_folder, unit = 'mm', opticalSet
       auto_measure_mm_ls <- list() #moved from before i loop, attempt to correct bug
 
 
-      for(j in 1:length(sizefiles)) {
+      for(j in seq_len(length(sizefiles))) {
         #print(paste('j = ', j))
         sizefile <- sizefiles[j]
         roifile <- roifiles[j]
@@ -1861,7 +1921,7 @@ getRoiMeasurements <- function(taxafolder, nchar_folder, unit = 'mm', opticalSet
         mtry <- try(read.table(sizefile, sep = ",", header = TRUE),
                     silent = TRUE)
 
-        if (class(mtry) != "try-error") {
+        if (inherits(mtry, what = 'try-error')) {
           # print('try error == FALSE')
           #Get info
           roi_ID <- read.table(roifile, stringsAsFactors = FALSE)
@@ -1964,17 +2024,18 @@ getRoiMeasurements <- function(taxafolder, nchar_folder, unit = 'mm', opticalSet
 #'
 vpr_plot_sizefreq <- function(x, number_of_classes, colour_of_bar) {
 
-  oldpar <- par(no.readonly = TRUE)
-  on.exit(par(oldpar))
+  #oldpar <- par(no.readonly = TRUE)
+  #on.exit(par(oldpar))
 
   # avoid CRAN notes
   . <- NA
   data <- x
   taxa <- unique(data$taxa)
 
-  for(i in 1:length(taxa)) {
+  for(i in seq_len(length(taxa))) {
 
-    par(mfrow = c(1,2))
+    # par(mfrow = c(1,2))
+    withr::with_par(mfrow = c(1,2), code = {
 
     taxa_id <- taxa[i]
 
@@ -1990,8 +2051,9 @@ vpr_plot_sizefreq <- function(x, number_of_classes, colour_of_bar) {
       plot.new()
 
     }
-
+    })
   }
+
 
 }
 
@@ -2332,7 +2394,7 @@ vp_plot_matrix <- function(cm, classes, type, addLabels = TRUE, threshold = NULL
     #find diagonal values
     acc <- confusion$Freq[confusion$Var1 == confusion$Var2]
     #for each taxa
-    for (i in 1:length(unique(confusion$Var1))){
+    for (i in seq_len(length(unique(confusion$Var1)))){
       #add text label
       p <- p + annotate('text', x = i, y = i, #position on diagonal
                         #label with frequency as percent rounded to 2 digits
@@ -2346,7 +2408,7 @@ vp_plot_matrix <- function(cm, classes, type, addLabels = TRUE, threshold = NULL
   #threshold labels
 
   if ( !is.null(threshold)){
-    for (i in 1:length(confusion$Var1)){
+    for (i in seq_len(length(confusion$Var1))){
       #if frequency is above threshold
       if (confusion$Freq[i] > threshold ){
         #find x and y locations to plot
@@ -2462,7 +2524,7 @@ vp_plot_unkn <- function(cm, classes, threshold = 0, summary = TRUE, sample_size
 
   threshold<- 0
   #labels
-  for (i in 1:length(confusion$Var1)){
+  for (i in seq_len(length(confusion$Var1))){
     #if frequency is above threshold
     if (confusion$Freq[i] > threshold ){
       #find x and y locations to plot
@@ -2500,28 +2562,33 @@ vp_plot_unkn <- function(cm, classes, threshold = 0, summary = TRUE, sample_size
 
 }
 
-
+interp2xyz <- function(al, data.frame = FALSE) {
+  stopifnot(is.list(al), identical(names(al), c("x","y","z")))
+  xy <- expand.grid(x = al[["x"]], y = al[["y"]], KEEP.OUT.ATTRS=FALSE)
+  cbind(if(!data.frame) data.matrix(xy) else xy,
+        z = as.vector(al[["z"]]))
+}
 
 
 #contour plot with interpolation
 
-vpr_plot_contour <- function(data, var, dup= 'mean', method = 'interp', labels = TRUE, bw = 1){
+vpr_plot_contour <- function(data, var, dup= 'mean', method = 'interp', labels = TRUE, bw = 1, cmo){
 
   #' Interpolated contour plot of particular variable
   #'
   #' Creates interpolated contour plot, can be used as a background for ROI or tow yo information
   #'
-  #' @author E. Chisholm
+  #' @author E. Chisholm & Kevin Sorochan
   #'
-  #' @param data data frame needs to include avg_hr, depth, and variable of
+  #' @param data data frame needs to include time_hr, depth, and variable of
   #'   choice (var)
   #' @param var variable in dataframe which will be interpolated and plotted
   #' @param dup if method == 'interp'. Method of handling duplicates in interpolation, passed to interp function (options: 'mean', 'strip', 'error')
-  #' @param method Specifies interpolation method, options are 'akima', 'interp'
-  #'   or 'oce', akima and interp produce identical interpolations, oce uses
-  #'   slightly different method (oce is least error prone)
+  #' @param method Specifies interpolation method, options are 'interp' or
+  #'   'oce', oce uses slightly different method (oce is least error prone)
   #' @param labels logical value indicating whether or not to plot contour labels
   #' @param bw bin width defining interval at which contours are labelled
+  #' @param cmo name of a `cmocean` plotting theme, see `?cmocean` for more information
   #'
   #' @export
 
@@ -2531,44 +2598,94 @@ vpr_plot_contour <- function(data, var, dup= 'mean', method = 'interp', labels =
   #interpolate
   #use interp package rather than akima to avoid breaking R
   #ref: https://www.user2017.brussels/uploads/bivand_gebhardt_user17_a0.pdf
-  if(method == 'akima'){
-    interpdf <- akima::interp(x = data$avg_hr, y = data$depth, z = data[[var]], duplicate = dup ,linear = TRUE  )
-  }
+  # browser()
+
+  # akima method deprecated 2022 - due to licensing issues
+  # if(method == 'akima'){
+  #   interpdf <- akima::interp(x = data$time_hr, y = data$depth, z = data[[var]], duplicate = dup ,linear = TRUE  )
+  # }
+
   if(method == 'interp'){
-    interpdf <- interp::interp(x = data$avg_hr, y = data$depth, z = data[[var]], duplicate = dup ,linear = TRUE  )
+
+    interpdf <- try(interp::interp(x = data$time_hr, y = data$depth, z = data[[var]], duplicate = dup ,linear = TRUE  ))
+    if(inherits(interpdf, 'try-error'))
+      stop("Interpolation failed, try method = 'oce'")
   }
   if(method == 'oce'){
-    interpdf_oce <- oce::interpBarnes(x = data$avg_hr, y = data$depth, z = data[[var]] )
+    interpdf_oce <- oce::interpBarnes(x = data$time_hr, y = data$depth, z = data[[var]] )
     interpdf <- NULL
     interpdf$x <- interpdf_oce$xg
     interpdf$y <- interpdf_oce$yg
     interpdf$z <- interpdf_oce$zg
   }
   #convert to dataframe
-  df <- akima::interp2xyz(interpdf, data.frame = TRUE)
+  df <- interp2xyz(interpdf, data.frame = TRUE)
 
   #zero time values
   df$x <- df$x - min(df$x)
 
+  if(missing(cmo)){
+    # default to gray
+    cmof <- cmocean::cmocean('gray')
+    # set default col scheme based on variable name
+    if(var %in% c('temperature', 'conc_m3')){
+      cmof <- cmocean::cmocean('thermal')
+    }
+    if(var == 'salinity') {
+      cmof <- cmocean::cmocean('haline')
+    }
+    if(var == 'density') {
+      cmof <- cmocean::cmocean('dense')
+    }
+    if(var == 'fluorescence') {
+      cmof <- cmocean::cmocean('algae')
+    }
+    if(var == 'turbidity') {
+      cmof <- cmocean::cmocean('turbid')
+    }} else{
+      cmof <- cmocean::cmocean(cmo)
+    }
+
+  # theme_col <- cmocean::cmocean(cmo)
+  cmo_data <- cmof(100)
+
   if(labels == TRUE){
+    # updated plotting from KS
     p <- ggplot(df) +
       geom_tile(aes(x = x, y = y, fill = z)) +
       labs(fill = var) +
-      scale_y_reverse(name = 'Depth [m]') +
-      scale_x_continuous(name = 'Time [h]') +
+      scale_y_reverse(name = "Depth [m]") +
+      scale_x_continuous(name = "Time [h]") +
       theme_classic() +
-      geom_contour(aes(x = x, y = y, z= z), col = 'black') +
-      geom_text_contour(aes(x = x, y = y, z= z),binwidth = bw, col = 'white', check_overlap = TRUE, size = 8)+ #CONTOUR LABELS
-      scale_fill_continuous(na.value = 'white')
+      geom_contour(aes(x = x, y = y, z = z), col = "black") +
+      geom_text_contour(aes(x = x, y = y, z = z), binwidth = bw,
+                        col = "white", check_overlap = TRUE, size = 8) +
+      scale_fill_gradientn(colours = cmo_data, na.value = 'gray')
+    # p <- ggplot(df) +
+    #   geom_tile(aes(x = x, y = y, fill = z)) +
+    #   labs(fill = var) +
+    #   scale_y_reverse(name = 'Depth [m]') +
+    #   scale_x_continuous(name = 'Time [h]') +
+    #   theme_classic() +
+    #   geom_contour(aes(x = x, y = y, z= z), col = 'black') +
+    #   geom_text_contour(aes(x = x, y = y, z= z),binwidth = bw, col = 'white', check_overlap = TRUE, size = 8)+ #CONTOUR LABELS
+    #   scale_fill_continuous(na.value = 'white')
   }else{
+    #  updated plotting from KS
     p <- ggplot(df) +
       geom_tile(aes(x = x, y = y, fill = z)) +
-      labs(fill = var) +
-      scale_y_reverse(name = 'Depth [m]') +
-      scale_x_continuous(name = 'Time [h]') +
-      theme_classic() +
-      geom_contour(aes(x = x, y = y, z= z), col = 'black') +
-      scale_fill_continuous(na.value = 'white')
+      labs(fill = var) + scale_y_reverse(name = "Depth [m]") +
+      scale_x_continuous(name = "Time [h]") + theme_classic() +
+      geom_contour(aes(x = x, y = y, z = z), col = "black") +
+      scale_fill_gradientn(colours = cmo_data, na.value = "gray")
+    # p <- ggplot(df) +
+    #   geom_tile(aes(x = x, y = y, fill = z)) +
+    #   labs(fill = var) +
+    #   scale_y_reverse(name = 'Depth [m]') +
+    #   scale_x_continuous(name = 'Time [h]') +
+    #   theme_classic() +
+    #   geom_contour(aes(x = x, y = y, z= z), col = 'black') +
+    #   scale_fill_continuous(na.value = 'white')
   }
   return(p)
 }
@@ -2593,6 +2710,10 @@ vpr_plot_contour <- function(data, var, dup= 'mean', method = 'interp', labels =
 #' @export
 
 vpr_plot_profile <- function(taxa_conc_n, taxa_to_plot, plot_conc){
+  # check that depth is present
+  if(!'depth' %in% names(taxa_conc_n)){
+    stop("These plots require a 'depth' variable!")
+  }
 
   # avoid CRAN notes
   temperature <- depth <- salinity <- fluorescence <- density <- conc_m3 <- pressure <- NA
@@ -2648,9 +2769,9 @@ if(is.null(taxa_to_plot)){
 }else{
 # facet wrap plot all taxa, if only one taxa, comment out facet wrap
 pp <- ggplot(taxa_conc_n[taxa_conc_n$taxa %in% c(taxa_to_plot),]) +
-  geom_point(aes(x = pressure, y = conc_m3/1000)) + #conversion of m3 to L using default density
-  stat_summary_bin(aes(x = pressure, y = conc_m3/1000), fun = 'mean', col = 'red', geom = 'line', size = 3)  +
-  scale_x_reverse(name = 'Pressure [db]') +
+  geom_point(aes(x = depth, y = conc_m3/1000)) + #conversion of m3 to L using default density
+  stat_summary_bin(aes(x = depth, y = conc_m3/1000), fun = 'mean', col = 'red', geom = 'line', size = 3)  +
+  scale_x_reverse(name = 'Depth [m]') +
   scale_y_continuous(name = expression('ROI L'^'-1')) +
   # ggtitle('Concentrations') +
   facet_wrap(~taxa, nrow = 1, ncol = length(unique(taxa_conc_n$taxa)), scales = 'free_x')+
@@ -2662,9 +2783,9 @@ pp <- ggplot(taxa_conc_n[taxa_conc_n$taxa %in% c(taxa_to_plot),]) +
 }
 
 if(plot_conc == TRUE){
-p <- grid.arrange(p_TS, p_FD, pp , widths = c(1, 1, 2), heights = c(2), nrow = 1, ncol = 3)
+p <- grid.arrange(p_TS, p_FD, pp , widths = c(1, 1, 2), heights = 2, nrow = 1, ncol = 3)
 }else{
-  p <- grid.arrange(p_TS, p_FD, widths = c(1, 1), heights = c(2), nrow = 1, ncol = 2)
+  p <- grid.arrange(p_TS, p_FD, widths = c(1, 1), heights = 2, nrow = 1, ncol = 2)
 
 }
 return(p)
@@ -2755,7 +2876,7 @@ vpr_img_reclassified <- function(day, hour, base_dir, taxa_of_interest, image_di
     shell(command1)
 
     #Copy rois to this directory
-    for (iii in 1:length(new_roi_path)) {
+    for (iii in seq_len(length(new_roi_path))) {
 
       dir_tmp <- as.character(new_roi_path[iii])
       command2 <- paste("copy", dir_tmp, roi_folder, sep = " ")
@@ -2785,7 +2906,7 @@ vpr_img_depth <- function(data, min.depth , max.depth, roiFolder , format = 'lis
   #'
   #' @param data data frame containing CTD and ROI data from
   #'   \code{\link{vpr_ctdroi_merge}}, which also contains calculated variables
-  #'   sigmaT and avg_hr
+  #'   sigmaT and time_hr
   #' @param min.depth minimum depth of ROIs you are interested in looking at
   #' @param max.depth maximum depth of ROIs you are interested in exploring
   #' @param roiFolder directory that ROIs are within (can be very general eg.
@@ -2827,8 +2948,8 @@ vpr_img_depth <- function(data, min.depth , max.depth, roiFolder , format = 'lis
   #search for ROI files based on data
   roi_files <- paste0('roi.', sprintf('%08d', data_filtered$roi), '*')
   roi_file_list <- list()
-  options(warn = 1)
-  for (i in 1:length(roi_files)){
+  #options(warn = 1)
+  for (i in seq_len(length(roi_files))){
     roi_file_list[[i]] <- list.files(roiFolder, pattern = roi_files[i], recursive = TRUE, full.names = TRUE)
     if (length(roi_file_list[[i]]) >= 1){
       message(paste('Found', length(roi_file_list[[i]]),' files for ',roi_files[i] ))
@@ -2841,11 +2962,11 @@ vpr_img_depth <- function(data, min.depth , max.depth, roiFolder , format = 'lis
     return(roi_file_list)
   }
   if (format == 'image'){
-    for(i in 1:length(roi_file_list)){
-      for(ii in 1:length(roi_file_list[[i]])){
+    for(i in seq_len(length(roi_file_list))){
+      for(ii in seq_len(length(roi_file_list[[i]]))){
         data_roi <- data_filtered %>%
           dplyr::filter(., roi == roi[i])
-        meta_str <- paste0('time (hr): ', data_roi$avg_hr[1], '\n temperature: ', data_roi$temperature[1], '\n pressure: ', data_roi$pressure[1], '\n salinity: ', data_roi$salinity[1], '\n')
+        meta_str <- paste0('time (hr): ', data_roi$time_hr[1], '\n temperature: ', data_roi$temperature[1], '\n pressure: ', data_roi$pressure[1], '\n salinity: ', data_roi$salinity[1], '\n')
         pp <-  magick::image_read(roi_file_list[[i]][ii]) %>%
           #print metadata on image
           #image_annotate(text = roi_files[i], color = 'white', size = 10) %>%
@@ -2855,7 +2976,7 @@ vpr_img_depth <- function(data, min.depth , max.depth, roiFolder , format = 'lis
         print(pp)
         #print metadata
         #cat(paste0(roi_files[i], '\n'))
-        #cat( paste0('time (hr): ', data_roi$avg_hr, '\n temperature: ', data_roi$temperature, '\n pressure: ', data_roi$pressure, '\n salinity: ', data_roi$salinity, '\n'))
+        #cat( paste0('time (hr): ', data_roi$time_hr, '\n temperature: ', data_roi$temperature, '\n pressure: ', data_roi$pressure, '\n salinity: ', data_roi$salinity, '\n'))
 
       }
     }
@@ -2880,7 +3001,7 @@ vpr_img_category <- function(data, min.depth , max.depth, roiFolder , format = '
   #'
   #' @param data data frame containing CTD and ROI data from
   #'   \code{\link{vpr_ctdroi_merge}}, which also contains calculated variables
-  #'   sigmaT and avg_hr
+  #'   sigmaT and time_hr
   #' @param min.depth minimum depth of ROIs you are interested in looking at
   #' @param max.depth maximum depth of ROIs you are interested in exploring
   #' @param roiFolder directory that ROIs are within (can be very general eg.
@@ -2928,8 +3049,8 @@ vpr_img_category <- function(data, min.depth , max.depth, roiFolder , format = '
   #search for ROI files based on data
   roi_files <- paste0('roi.', sprintf('%08d', data_filtered$roi), '*')
   roi_file_list <- list()
-  options(warn = 1)
-  for (i in 1:length(roi_files)){
+  # options(warn = 1) # is this needed?
+  for (i in seq_len(length(roi_files))){
     roi_file_list[[i]] <- list.files(roiFolder, pattern = roi_files[i], recursive = TRUE, full.names = TRUE)
     if (length(roi_file_list[[i]]) >= 1){
       print(paste('Found', length(roi_file_list[[i]]),' files for ',roi_files[i] ))
@@ -2942,18 +3063,18 @@ vpr_img_category <- function(data, min.depth , max.depth, roiFolder , format = '
     return(roi_file_list)
   }
   if (format == 'image'){
-    for(i in 1:length(roi_file_list)){
-      for(ii in 1:length(roi_file_list[[i]])){
+    for(i in seq_len(length(roi_file_list))){
+      for(ii in seq_len(length(roi_file_list[[i]]))){
         data_roi <- data_filtered %>%
           dplyr::filter(., roi == roi[i])
-        meta_str <- paste0('time (hr): ', data_roi$avg_hr[1], '\n temperature: ', data_roi$temperature[1], '\n pressure: ', data_roi$pressure[1], '\n salinity: ', data_roi$salinity[1], '\n')
+        meta_str <- paste0('time (hr): ', data_roi$time_hr[1], '\n temperature: ', data_roi$temperature[1], '\n pressure: ', data_roi$pressure[1], '\n salinity: ', data_roi$salinity[1], '\n')
         pp <-  magick::image_read(roi_file_list[[i]][ii]) %>%
           magick::image_scale(geometry = 'x300')
 
         print(pp)
         #print metadata
         cat(paste0(roi_files[i], '\n'))
-        cat( paste0('time (hr): ', data_roi$avg_hr[1], '\n temperature: ', data_roi$temperature[1], '\n pressure: ', data_roi$pressure[1], '\n salinity: ', data_roi$salinity[1], '\n'))
+        cat( paste0('time (hr): ', data_roi$time_hr[1], '\n temperature: ', data_roi$temperature[1], '\n pressure: ', data_roi$pressure[1], '\n salinity: ', data_roi$salinity[1], '\n'))
 
       }
     }
@@ -3031,7 +3152,8 @@ vpr_img_copy <- function(auto_id_folder, taxas.of.interest, day, hour){
 
     for(ii in txt_roi) {
 
-      setwd(dir_roi)
+      # setwd(dir_roi)
+      withr::with_dir(dir_roi, code = {
 
       roi_path_str <- read.table(ii, stringsAsFactors = FALSE)
 
@@ -3056,7 +3178,7 @@ vpr_img_copy <- function(auto_id_folder, taxas.of.interest, day, hour){
       shell(command1)
 
       #Copy rois to this directory
-      for (iii in 1:length(new_roi_path)) {
+      for (iii in seq_len(length(new_roi_path))) {
 
         dir_tmp <- as.character(new_roi_path[iii])
         command2 <- paste("copy", dir_tmp, roi_folder, sep = " ")
@@ -3064,8 +3186,9 @@ vpr_img_copy <- function(auto_id_folder, taxas.of.interest, day, hour){
 
         print(paste(iii, '/', length(new_roi_path),' completed!'))
       }
+      }) # close dir
+      }
 
-    }
 
     print(paste(i, 'completed!'))
   }
@@ -3112,7 +3235,7 @@ vpr_img_check <- function(folder_dir, basepath){
 
 stfolders <- list.files(folder_dir, full.names = TRUE)
 
-for (i in 1:length(stfolders)){ #for each day/hour loop
+for (i in seq_len(length(stfolders))){ #for each day/hour loop
 
   krill_ver <- list.files(stfolders[i])
 

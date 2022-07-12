@@ -1,6 +1,6 @@
 context("merge data frames")
-
-library(vprr)
+library(testthat)
+# library(vprr)
 
 data('ctd_dat_combine')
 data('roi_dat_combine')

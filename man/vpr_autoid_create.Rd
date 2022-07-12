@@ -4,14 +4,20 @@
 \alias{vpr_autoid_create}
 \title{Modifies aid and aid mea files based on manual reclassification}
 \usage{
-vpr_autoid_create(reclassify, misclassified, basepath)
+vpr_autoid_create(reclassify, misclassified, basepath, day, hour, mea = TRUE)
 }
 \arguments{
 \item{reclassify}{list of reclassify files (output from vpr_manual_classification())}
 
 \item{misclassified}{list misclassify files (output from vpr_manual_classification())}
 
-\item{basepath}{base path to auto ID folder eg 'E:/autoID_EC_07032019/'
+\item{basepath}{base path to auto ID folder eg 'E:/autoID_EC_07032019/'}
+
+\item{day}{day identifier for relevant aid & aidmeas files}
+
+\item{hour}{hour identifier for relevant aid & aidmeas files}
+
+\item{mea}{logical indicating whether or not there are accompanying measurement files to be created
 \subsection{examples}{
 
 basepath <- 'E:/autoID_EC_07032019/'

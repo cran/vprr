@@ -1,6 +1,6 @@
 context('Binning and calculations')
-
-library(vprr)
+library(testthat)
+# library(vprr)
 
 data("ctd_roi_merge")
 data("roimeas_dat_combine")
@@ -9,7 +9,7 @@ year <- 2019
 test_date  <- '2019-08-11'
 binSize <- 5
 imageVolume <- 83663
-category_of_interest <- c('Calanus')
+category_of_interest <- 'Calanus'
 
 
 data <- ctd_roi_merge %>%

@@ -1,4 +1,4 @@
 library(testthat)
-library(vprr)
+# library(vprr)
 
-test_check("vprr")
+testthat::test_check(package = "vprr")

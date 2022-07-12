@@ -1,6 +1,6 @@
 context("read files")
-
-library(vprr)
+library(testthat)
+# library(vprr)
 
 # required metadata and data
 
@@ -23,7 +23,7 @@ raw2 <- readLines(ctd_files[2])
 
 # CTD file read in
 test_that("CTD files are read in accurately",{
-  expect_warning(vpr_ctd_read(ctd_files, station_of_interest), 'CTD data columns named based on 2019 defaults!') # produces warning about column names
+  expect_warning(vpr_ctd_read(ctd_files, station_of_interest), 'CTD data columns named based on defaults!') # produces warning about column names
   expect_error(vpr_ctd_read(no_ctd_files, station_of_interest)) # error when no files given
   expect_silent(ctd_dat_combine <- vpr_ctd_read(ctd_files, station_of_interest, col_list = col_list )) # no warnings when col_list is specififed
 
@@ -81,7 +81,7 @@ test_that("VPR autoid files are read in accurately", {
 
   taxa_names <- names(roi_dat_combine)[-c(1,13)]
   t_names_exp <- list()
-  for(i in 1:length(aid_files)){
+  for(i in seq_len(length(aid_files))){
     t_names_exp[[i]] <- vpr_category(aid_files[[i]])
   }
   t_names_exp <- unique(unlist(t_names_exp))
@@ -144,7 +144,7 @@ test_that("VPR autoid files are read in accurately", {
 
   # check match to aid files
   num_dat_img <- list()
-  for(i in 1:length(taxa_names)){
+  for(i in seq_len(length(taxa_names))){
     num_dat_img[[i]] <- sum(roi_dat_combine[[taxa_names[[i]]]])
   }
 
